@@ -1,21 +1,12 @@
 """Type definitions for Creed Guardian."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Literal
 
 
 class Tier(Enum):
-    """Model tiers for Creed Guardian.
-
-    Each tier represents a different model size/capability tradeoff:
-    - 1.5b: Smallest, runs on IoT/embedded devices (2GB RAM)
-    - 3b: Light, runs on tablets/low-end laptops (4GB RAM)
-    - 7b: Balanced, runs on laptops (8GB RAM)
-    - 14b: Full-featured, runs on servers (12GB RAM)
-    - 32b: Maximum capability, runs on workstations (20GB RAM)
-    - auto: Auto-select based on available resources
-    """
+    """Model tiers for Creed Guardian."""
 
     T1_5B = "1.5b"
     T3B = "3b"
@@ -25,7 +16,6 @@ class Tier(Enum):
     AUTO = "auto"
 
 
-# Model mapping for each tier
 TIER_MODELS: dict[Tier, str] = {
     Tier.T1_5B: "qwen2.5:1.5b",
     Tier.T3B: "qwen2.5:3b",
@@ -34,7 +24,6 @@ TIER_MODELS: dict[Tier, str] = {
     Tier.T32B: "qwen2.5:32b",
 }
 
-# RAM requirements in GB for each tier
 TIER_RAM_REQUIREMENTS: dict[Tier, float] = {
     Tier.T1_5B: 2.0,
     Tier.T3B: 4.0,
@@ -43,7 +32,6 @@ TIER_RAM_REQUIREMENTS: dict[Tier, float] = {
     Tier.T32B: 20.0,
 }
 
-# Model accuracy characteristics
 TIER_ACCURACY: dict[Tier, dict[str, float]] = {
     Tier.T1_5B: {"overall": 0.60, "recall": 1.00, "precision": 0.20},
     Tier.T3B: {"overall": 0.72, "recall": 1.00, "precision": 0.45},
@@ -55,20 +43,7 @@ TIER_ACCURACY: dict[Tier, dict[str, float]] = {
 
 @dataclass
 class GuardianResult:
-    """Result from Guardian evaluation.
-
-    Attributes:
-        verdict: The evaluation verdict (PASS, FAIL, or UNCERTAIN)
-        allowed: Whether the action is allowed (True if PASS)
-        blocked: Whether the action is blocked (True if FAIL or fail-closed UNCERTAIN)
-        uncertain: Whether the verdict is uncertain
-        reason: Human-readable explanation
-        confidence: Confidence score (0.0-1.0)
-        source: Where the verdict came from (pattern, local, cloud)
-        tier: Which model tier was used
-        latency_ms: Evaluation latency in milliseconds
-        escalated: Whether this was escalated to cloud
-    """
+    """Result from Guardian evaluation."""
 
     verdict: Literal["PASS", "FAIL", "UNCERTAIN"]
     allowed: bool
@@ -82,7 +57,7 @@ class GuardianResult:
     escalated: bool = False
 
     @classmethod
-    def passed(
+    def create_pass(
         cls, reason: str, tier: str, latency_ms: float, source: str = "local"
     ) -> "GuardianResult":
         """Create a PASS result."""
@@ -99,7 +74,7 @@ class GuardianResult:
         )
 
     @classmethod
-    def blocked(
+    def create_blocked(
         cls, reason: str, tier: str, latency_ms: float, source: str = "local"
     ) -> "GuardianResult":
         """Create a FAIL/blocked result."""
@@ -116,7 +91,7 @@ class GuardianResult:
         )
 
     @classmethod
-    def uncertain(
+    def create_uncertain(
         cls, reason: str, tier: str, latency_ms: float, source: str = "local"
     ) -> "GuardianResult":
         """Create an UNCERTAIN result."""

@@ -12,7 +12,7 @@ class TestGuardianResult:
     """Tests for GuardianResult dataclass."""
 
     def test_passed_result(self):
-        result = GuardianResult.passed("Safe action", "nano", 100.0)
+        result = GuardianResult.create_pass("Safe action", "nano", 100.0)
         assert result.verdict == "PASS"
         assert result.allowed is True
         assert result.blocked is False
@@ -20,21 +20,21 @@ class TestGuardianResult:
         assert result.tier == "nano"
 
     def test_blocked_result(self):
-        result = GuardianResult.blocked("Unsafe action", "lite", 150.0)
+        result = GuardianResult.create_blocked("Unsafe action", "lite", 150.0)
         assert result.verdict == "FAIL"
         assert result.allowed is False
         assert result.blocked is True
         assert result.uncertain is False
 
     def test_uncertain_result(self):
-        result = GuardianResult.uncertain("Cannot determine", "standard", 200.0)
+        result = GuardianResult.create_uncertain("Cannot determine", "standard", 200.0)
         assert result.verdict == "UNCERTAIN"
         assert result.allowed is False
         assert result.blocked is False
         assert result.uncertain is True
 
     def test_to_dict(self):
-        result = GuardianResult.passed("Test", "nano", 50.0)
+        result = GuardianResult.create_pass("Test", "nano", 50.0)
         d = result.to_dict()
         assert d["verdict"] == "PASS"
         assert d["allowed"] is True
@@ -59,13 +59,13 @@ class TestTierSelection:
 
     def test_explicit_tier_standard(self):
         with patch.object(Guardian, "_ensure_initialized", new_callable=AsyncMock):
-            guardian = Guardian(tier="standard")
+            guardian = Guardian(tier="14b")
             assert guardian.tier == Tier.T14B
             assert guardian.model == "qwen2.5:14b"
 
     def test_explicit_tier_pro(self):
         with patch.object(Guardian, "_ensure_initialized", new_callable=AsyncMock):
-            guardian = Guardian(tier="pro")
+            guardian = Guardian(tier="32b")
             assert guardian.tier == Tier.T32B
             assert guardian.model == "qwen2.5:32b"
 
@@ -249,7 +249,7 @@ class TestGuardianStatus:
         )
         status = guardian.get_status()
 
-        assert status["tier"] == "lite"
+        assert status["tier"] == "7b"
         assert status["model"] == "qwen2.5:7b"
         assert status["fail_closed"] is True
         assert status["escalate_uncertain"] is False

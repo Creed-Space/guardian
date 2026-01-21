@@ -199,13 +199,13 @@ ACTION: {action}
 
             # Parse verdict
             if any(kw in text for kw in ["FAIL", "BLOCK", "UNSAFE", "DANGEROUS"]):
-                return GuardianResult.blocked(
+                return GuardianResult.create_blocked(
                     reason="Action violates safety principle",
                     tier=self.tier.value,
                     latency_ms=latency,
                 )
             elif any(kw in text for kw in ["PASS", "SAFE", "ALLOW", "OK"]):
-                return GuardianResult.passed(
+                return GuardianResult.create_pass(
                     reason="Action appears safe",
                     tier=self.tier.value,
                     latency_ms=latency,
@@ -217,7 +217,7 @@ ACTION: {action}
         except asyncio.TimeoutError as e:
             latency = (time.perf_counter() - start) * 1000
             if self.fail_closed:
-                return GuardianResult.blocked(
+                return GuardianResult.create_blocked(
                     reason="Evaluation timeout (fail-closed)",
                     tier=self.tier.value,
                     latency_ms=latency,
@@ -227,7 +227,7 @@ ACTION: {action}
         except (ModelUnavailableError, OllamaConnectionError):
             latency = (time.perf_counter() - start) * 1000
             if self.fail_closed:
-                return GuardianResult.blocked(
+                return GuardianResult.create_blocked(
                     reason="Evaluation service unavailable (fail-closed)",
                     tier=self.tier.value,
                     latency_ms=latency,
@@ -252,13 +252,13 @@ ACTION: {action}
                 logger.warning(f"Cloud escalation failed: {e}")
 
         if self.fail_closed:
-            return GuardianResult.blocked(
+            return GuardianResult.create_blocked(
                 reason="Uncertain verdict (fail-closed mode)",
                 tier=self.tier.value,
                 latency_ms=local_latency,
             )
 
-        return GuardianResult.uncertain(
+        return GuardianResult.create_uncertain(
             reason="Unable to determine safety",
             tier=self.tier.value,
             latency_ms=local_latency,
@@ -277,7 +277,7 @@ ACTION: {action}
         """
         # Placeholder for cloud escalation
         logger.info("Cloud escalation not yet implemented")
-        return GuardianResult.uncertain(
+        return GuardianResult.create_uncertain(
             reason="Cloud escalation not yet implemented",
             tier=self.tier.value,
             latency_ms=local_latency,
