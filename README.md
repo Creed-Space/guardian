@@ -182,6 +182,28 @@ For cloud features (escalation, fleet management, custom constitutions), check o
 - [Creed Space](https://creed.space)
 - [GitHub](https://github.com/Creed-Space/guardian)
 
+## Security Considerations
+
+### Prompt Injection
+
+Guardian uses LLM-based evaluation, which is inherently susceptible to prompt injection attacks. An adversary could craft inputs designed to manipulate the model's decision. Mitigations:
+
+1. **Fail-closed default**: Uncertain responses are blocked
+2. **Input sanitization**: Suspicious patterns are flagged
+3. **Defense in depth**: Guardian is one layer, not the only layer
+
+**Recommendation**: Use Guardian alongside other security measures, not as a sole defense.
+
+### Network Security
+
+- By default, Guardian only connects to `localhost:11434` (Ollama)
+- Cloud metadata endpoints and private IP ranges are blocked
+- If you need remote Ollama, validate URLs in your application layer
+
+### Reporting Security Issues
+
+Report security vulnerabilities to security@creed.space. Do not open public issues for security bugs.
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.

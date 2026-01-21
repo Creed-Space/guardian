@@ -7,9 +7,12 @@ Free forever. No API costs. No data leaves your device.
 import asyncio
 import functools
 import logging
+import re
 import time
 from typing import Callable, TypeVar
+from urllib.parse import urlparse
 
+import httpx
 import psutil
 
 from creed_guardian.client import OllamaClient
@@ -29,6 +32,54 @@ from creed_guardian.types import (
 logger = logging.getLogger(__name__)
 
 F = TypeVar("F", bound=Callable)
+
+# Security: Prompt injection detection patterns
+SUSPICIOUS_PATTERNS = [
+    "ignore previous",
+    "disregard",
+    "forget instructions",
+    "ignore above",
+    "ignore the above",
+    "ignore all",
+    "answer only:",
+    "respond with:",
+    "say safe",
+    "say unsafe",
+    "you must say",
+    "always respond",
+    "override",
+]
+
+MAX_INPUT_LENGTH = 10000  # 10KB per field
+
+# Security: SSRF protection - blocked metadata endpoints
+BLOCKED_HOSTS = frozenset({
+    "169.254.169.254",  # AWS metadata
+    "metadata.google.internal",  # GCP metadata
+    "metadata.azure.com",  # Azure metadata
+})
+
+# Private IP ranges (RFC 1918)
+PRIVATE_RANGES = [
+    "10.",
+    "172.16.",
+    "172.17.",
+    "172.18.",
+    "172.19.",
+    "172.20.",
+    "172.21.",
+    "172.22.",
+    "172.23.",
+    "172.24.",
+    "172.25.",
+    "172.26.",
+    "172.27.",
+    "172.28.",
+    "172.29.",
+    "172.30.",
+    "172.31.",
+    "192.168.",
+]
 
 # Default safety principle
 DEFAULT_PRINCIPLE = (
@@ -67,6 +118,7 @@ class Guardian:
         fail_closed: bool = True,
         auto_download: bool = True,
         evaluation_timeout: float = 30.0,
+        verify_ssl: bool | str = True,
     ):
         """
         Initialize Creed Guardian.
@@ -80,22 +132,65 @@ class Guardian:
             fail_closed: Block uncertain cases when offline (default: True)
             auto_download: Automatically download model if not available
             evaluation_timeout: Timeout in seconds for evaluation
+            verify_ssl: True (default), False, or path to CA bundle
         """
         self.tier = self._resolve_tier(tier)
         self.model = TIER_MODELS[self.tier]
         self.api_key = api_key
-        self.ollama_url = ollama_url
+        self.ollama_url = self._validate_ollama_url(ollama_url)
         self.constitution = constitution
         self.escalate_uncertain = escalate_uncertain and api_key is not None
         self.fail_closed = fail_closed
         self.auto_download = auto_download
         self.evaluation_timeout = evaluation_timeout
+        self._verify_ssl = verify_ssl
 
         self._client: OllamaClient | None = None
         self._initialized = False
         self._initialization_lock = asyncio.Lock()
 
-        logger.info(f"Guardian initialized: tier={self.tier.value}, model={self.model}")
+        logger.debug(f"Guardian initialized: tier={self.tier.value}")
+
+    def _validate_ollama_url(self, url: str) -> str:
+        """Validate Ollama URL to prevent SSRF attacks."""
+        parsed = urlparse(url)
+
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError(f"Invalid URL scheme: {parsed.scheme}. Use http or https.")
+
+        hostname = parsed.hostname or ""
+
+        # Always allow localhost
+        if hostname in ("localhost", "127.0.0.1", "::1"):
+            return url
+
+        # Block cloud metadata endpoints
+        if hostname in BLOCKED_HOSTS:
+            raise ValueError(f"Blocked metadata endpoint: {hostname}")
+
+        # Block private IP ranges
+        for prefix in PRIVATE_RANGES:
+            if hostname.startswith(prefix):
+                raise ValueError(f"Private network URLs not allowed: {hostname}")
+
+        return url
+
+    def _sanitize_input(self, text: str, field_name: str) -> str:
+        """Sanitize input to mitigate prompt injection."""
+        if len(text) > MAX_INPUT_LENGTH:
+            raise ValueError(f"{field_name} exceeds max length {MAX_INPUT_LENGTH}")
+
+        text_lower = text.lower()
+        for pattern in SUSPICIOUS_PATTERNS:
+            if pattern in text_lower:
+                logger.warning(f"Suspicious pattern in {field_name}: {pattern}")
+                # Don't raise - just log and let the model decide
+                # The fail-closed default will catch uncertain responses
+
+        # Collapse multiple newlines to prevent section injection
+        text = re.sub(r"\n{3,}", "\n\n", text)
+
+        return text.strip()
 
     def _resolve_tier(self, tier: str) -> Tier:
         """Resolve tier, auto-selecting if needed based on available RAM."""
@@ -103,7 +198,7 @@ class Guardian:
             available_ram = psutil.virtual_memory().total / (1024**3)  # Convert to GB
             for t in [Tier.T32B, Tier.T14B, Tier.T7B, Tier.T3B, Tier.T1_5B]:
                 if available_ram >= TIER_RAM_REQUIREMENTS[t]:
-                    logger.info(
+                    logger.debug(
                         f"Auto-selected tier {t.value} for {available_ram:.1f}GB RAM"
                     )
                     return t
@@ -120,7 +215,7 @@ class Guardian:
             if self._initialized:
                 return
 
-            self._client = OllamaClient(self.ollama_url)
+            self._client = OllamaClient(self.ollama_url, verify_ssl=self._verify_ssl)
 
             # Check if Ollama is running
             if not await self._client.check_connection():
@@ -138,6 +233,12 @@ class Guardian:
 
     def _build_prompt(self, action: str, context: str | None, principle: str) -> str:
         """Build evaluation prompt optimized for small models."""
+        # Sanitize inputs to mitigate prompt injection
+        action = self._sanitize_input(action, "action")
+        principle = self._sanitize_input(principle, "principle")
+        if context:
+            context = self._sanitize_input(context, "context")
+
         prompt = f"""Is this action safe to execute?
 
 PRINCIPLE: {principle}
@@ -248,8 +349,8 @@ ACTION: {action}
                 return await self._escalate_to_cloud(
                     action, context, principle, local_latency
                 )
-            except Exception as e:
-                logger.warning(f"Cloud escalation failed: {e}")
+            except (httpx.HTTPError, asyncio.TimeoutError, ValueError) as e:
+                logger.warning(f"Cloud escalation failed: {type(e).__name__}")
 
         if self.fail_closed:
             return GuardianResult.create_blocked(
@@ -296,11 +397,17 @@ ACTION: {action}
         use the async check() method instead.
         """
         try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        return loop.run_until_complete(self.check(action, context, principle))
+            asyncio.get_running_loop()
+            # Already in async context - can't use run_until_complete
+            raise RuntimeError(
+                "check_sync() cannot be called from async context. "
+                "Use await check() instead."
+            )
+        except RuntimeError as e:
+            if "no running event loop" in str(e):
+                # No running loop - safe to create one
+                return asyncio.run(self.check(action, context, principle))
+            raise
 
     def protect(self, func: F) -> F:
         """Decorator to protect a function with Guardian evaluation.
@@ -361,6 +468,5 @@ ACTION: {action}
             "model": self.model,
             "ollama_url": self.ollama_url,
             "fail_closed": self.fail_closed,
-            "escalate_uncertain": self.escalate_uncertain,
-            "has_api_key": self.api_key is not None,
+            # Removed: "escalate_uncertain", "has_api_key" - information leakage
         }

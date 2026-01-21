@@ -20,19 +20,28 @@ class OllamaClient:
     Handles model checking, downloading, and inference.
     """
 
-    def __init__(self, base_url: str = "http://localhost:11434"):
+    def __init__(
+        self,
+        base_url: str = "http://localhost:11434",
+        verify_ssl: bool | str = True,
+    ):
         """Initialize the Ollama client.
 
         Args:
             base_url: Ollama server URL (default: http://localhost:11434)
+            verify_ssl: True (default), False, or path to CA bundle
         """
         self.base_url = base_url.rstrip("/")
+        self._verify_ssl = verify_ssl
         self._http_client: httpx.AsyncClient | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""
         if self._http_client is None or self._http_client.is_closed:
-            self._http_client = httpx.AsyncClient(timeout=30.0)
+            self._http_client = httpx.AsyncClient(
+                timeout=30.0,
+                verify=self._verify_ssl,
+            )
         return self._http_client
 
     async def close(self) -> None:
@@ -211,17 +220,24 @@ class OllamaClient:
 class OllamaClientSync:
     """Synchronous wrapper for OllamaClient."""
 
-    def __init__(self, base_url: str = "http://localhost:11434"):
-        self._async_client = OllamaClient(base_url)
+    def __init__(
+        self,
+        base_url: str = "http://localhost:11434",
+        verify_ssl: bool | str = True,
+    ):
+        self._async_client = OllamaClient(base_url, verify_ssl=verify_ssl)
 
     def _run(self, coro: Any) -> Any:
         """Run coroutine synchronously."""
         try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        return loop.run_until_complete(coro)
+            asyncio.get_running_loop()
+            raise RuntimeError(
+                "Cannot use sync client from async context. Use OllamaClient instead."
+            )
+        except RuntimeError as e:
+            if "no running event loop" in str(e):
+                return asyncio.run(coro)
+            raise
 
     def check_connection(self) -> bool:
         return self._run(self._async_client.check_connection())

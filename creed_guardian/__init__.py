@@ -28,7 +28,7 @@ from creed_guardian.exceptions import (
 from creed_guardian.guardian import Guardian
 from creed_guardian.types import GuardianResult, Tier
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 __all__ = [
     "Guardian",
     "GuardianResult",

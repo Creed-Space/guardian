@@ -12,7 +12,8 @@ class ModelUnavailableError(GuardianError):
 
     def __init__(self, model: str, message: str | None = None):
         self.model = model
-        msg = message or f"Model '{model}' is not available. Run: ollama pull {model}"
+        # Generic message - details available via model attribute
+        msg = message or "Required model is not available"
         super().__init__(msg)
 
 
@@ -21,7 +22,8 @@ class EvaluationTimeoutError(GuardianError):
 
     def __init__(self, timeout_seconds: float, message: str | None = None):
         self.timeout_seconds = timeout_seconds
-        msg = message or f"Evaluation timed out after {timeout_seconds}s"
+        # Generic message - details available via timeout_seconds attribute
+        msg = message or "Safety evaluation timed out"
         super().__init__(msg)
 
 
@@ -30,7 +32,8 @@ class OllamaConnectionError(GuardianError):
 
     def __init__(self, url: str, message: str | None = None):
         self.url = url
-        msg = message or f"Cannot connect to Ollama at {url}. Is Ollama running?"
+        # Generic message - details available via url attribute
+        msg = message or "Cannot connect to Ollama server"
         super().__init__(msg)
 
 
