@@ -58,7 +58,7 @@ Guardian automatically selects the best model based on available RAM:
 | **14b** | qwen2.5:14b | ~9GB | 12GB | 91% | Servers, workstations |
 | **32b** | qwen2.5:32b | ~19GB | 20GB | 91% | High-security |
 
-All tiers catch **100% of obvious safety violations** (100% recall). Higher tiers reduce false positives.
+All tiers should typically catch **100% of obvious safety violations** (100% recall). Higher tiers reduce false positives.
 
 ## Usage
 
